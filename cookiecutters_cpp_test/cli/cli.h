@@ -13,4 +13,4 @@ namespace cookiecutters_cpp_test::cli::cli {
     };
 }
 
-#endif // COOKIECUTTERS_CPP_TEST_CLI_CLI_H
+#endif //COOKIECUTTERS_CPP_TEST_CLI_CLI_H

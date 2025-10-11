@@ -2,50 +2,76 @@ project(
         'cookiecutters_cpp_test',
         'cpp',
         version : '1.0.0',
-        default_options : ['warning_level=everything', 'cpp_std=c++23']
+        default_options : ['warning_level=everything', 'cpp_std=c++20']
 )
 
+# Configuration variables
+# -----------------------
+cc = meson.get_compiler('cpp')
 dependencies = []
+include_dirs = []
+override_options = []
+cpp_args = []
+link_args = []
 
+# Include Python dependency
+# -------------------------
+py = import('python')
+py_installation = py.find_installation(
+        pure: false,
+        modules: ['numpy']
+)
+# NOTE: Do not add dependency to dependencies list until building the target. Some targets may not need boost.
+py_dependencies = [py_installation.dependency()]
+py_include_dirs = []
+py_numpy_include_dir = run_command(
+        py_installation.full_path(),
+        ['-c', 'import numpy; print(numpy.get_include())'],
+        check: true
+).stdout().strip()
+py_include_dirs += [include_directories(py_numpy_include_dir)]
 
 # Include boost dependency
 # ------------------------
+# NOTE: Do not add dependency to dependencies list until building the target. Some targets may not need boost.
+boost_static = true
+boost_modules = [
+        'container',
+        'filesystem',
+        'iostreams'
+]
 boost_dep = dependency(
         'boost',
-        version : '>=1.83.0',
-        modules : ['container', 'filesystem', 'iostreams']
+        version : '=1.89.0',
+        modules : boost_modules,
+        static : boost_static
 )
-dependencies += [boost_dep]
-
 
 
 # Load source checker target
 # --------------------------
-python3 = find_program('python3', required: true)
 source_checker = custom_target(
         'source_checker',
-        command: ['python3', meson.current_source_dir() + '/source_checker.py'],
+        command: [py_installation.full_path(), meson.current_source_dir() + '/source_checker.py'],
         output: ['unused'],
         build_always_stale: true
 )
 
-
-
 # Load doxygen target
 # -------------------
-python3 = find_program('python3', required: true)
 dot = find_program('dot', required: true)
 doxygen = find_program('doxygen', required: true)
 doc_generator = custom_target(
         'doc_generator',
-        command: ['python3', meson.current_source_dir() + '/source_doxygen_runner.py'],
+        command: [py_installation.full_path(), meson.current_source_dir() + '/source_doxygen_runner.py'],
         output : ['docs'],
         build_always_stale: true
 )
 
-
 # Configure options
 # -----------------
+base_cpp_args = []
+base_link_args = []
 base_override_options = []
 base_debug_override_options = base_override_options + ['b_lto=false', 'b_ndebug=false', 'debug=true', 'cpp_debugstl=true'] # + ['optimization=0', 'buildtype=debug']
 base_release_override_options = base_override_options + ['b_lto=true', 'b_ndebug=true', 'debug=false', 'cpp_debugstl=false'] # + ['optimization=3', 'buildtype=release']
@@ -53,8 +79,6 @@ cc = meson.get_compiler('cpp')
 if cc.get_id() == 'gcc' or cc.get_id() == 'clang'
         # Configure base arguments for compiling / linking
         # ------------------------------------------------
-        base_cpp_args = []
-        base_link_args = []
         # Disable padding notification warning: Don't care about the compiler padding a struct.
         base_cpp_args += ['-Wno-padded']
         # Disable missing noexcept warning: Don't care that functions can be marked with noexcept.
@@ -97,8 +121,6 @@ if cc.get_id() == 'gcc' or cc.get_id() == 'clang'
         base_release_cpp_args = base_cpp_args
         base_release_link_args = base_link_args
 else
-        base_cpp_args = []
-        base_link_args = []
         base_debug_cpp_args = base_cpp_args + []
         base_debug_link_args = base_link_args + []
         base_release_cpp_args = base_cpp_args + []
@@ -108,21 +130,20 @@ endif
 # ---------------------------------------------
 buildtype = get_option('buildtype')
 if buildtype in ['debug', 'debugoptimized', 'minsize']  # Meson claims these profiles all have debugging info turned on, so enable debugging features
-        override_options = base_debug_override_options
-        cpp_args = base_debug_cpp_args
-        link_args = base_debug_link_args
+        override_options += base_debug_override_options
+        cpp_args += base_debug_cpp_args
+        link_args += base_debug_link_args
 elif buildtype == 'release'
-        override_options = base_release_override_options
-        cpp_args = base_release_cpp_args
-        link_args = base_release_link_args
+        override_options += base_release_override_options
+        cpp_args += base_release_cpp_args
+        link_args += base_release_link_args
 elif buildtype == 'plain'  # Unsure about what to do for plain - keep as-is for now.
-        override_options = []
-        cpp_args = []
-        link_args = []
+        override_options += []
+        cpp_args += []
+        link_args += []
 else
         error('Unknown buildtype: ' + buildtype)
 endif
-
 
 # Create CLI executables
 # ----------------------
@@ -132,43 +153,35 @@ cli = executable(
                 'cookiecutters_cpp_test/cli/cli.cpp'  # Needs to be cpp (h/hpp files are silently ignored)
         ],
         source_checker,
-        doc_generator,
-        dependencies: dependencies,
+        dependencies: dependencies+ [boost_dep],
+        include_directories: include_dirs,
         override_options: override_options,
         cpp_args: cpp_args,
         link_args: link_args
 )
 
-
-
 # Create unittest executables
 # ---------------------------
 gtest = subproject('gtest')
-gtest_dep = gtest.get_variable('gtest_dep')
-gmock_dep = gtest.get_variable('gmock_dep')
-gtest_dependencies = dependencies + [gtest_dep]
+gtest_dependency = gtest.get_variable('gtest_dep')
+gmock_dependency = gtest.get_variable('gmock_dep')
 gtest = executable(
         'gtest',
         [
                 'cookiecutters_cpp_test/gtest/gtest-all.cpp',  # Needs to be cpp (h/hpp files are silently ignored)
                 'cookiecutters_cpp_test/math/helpers_test.cpp'
         ],
-        dependencies: gtest_dependencies,
+        source_checker,
+        dependencies: dependencies + [gtest_dependency]+ [boost_dep],
+        include_directories: include_dirs,
         override_options: override_options,
         cpp_args: cpp_args,
         link_args: link_args
 )
 test('gtest', gtest)
 
-
-
 # Create python extension
 # -----------------------
-py = import('python')
-py_installation = py.find_installation(
-        pure: false,
-        modules: ['numpy']
-)
 # Include python files must be listed here for inclusion into generated Python package (py and pyi - will non-python files like JSON also work?).
 py_installation.install_sources(
         [
@@ -181,25 +194,46 @@ py_installation.install_sources(
 )
 # Compile and include python C extension
 
-py_numpy_include_dir = run_command(
-        py_installation.full_path(),
-        ['-c', 'import numpy; print(numpy.get_include())'],
-        check: true
-).stdout().strip()
-py_includes = include_directories(py_numpy_include_dir)
-
+pybind11 = subproject('pybind11')
+pybind11_dependency = pybind11.get_variable('pybind11_dep')
+py_dependencies += [pybind11_dependency]
+py_sources = [
+        'cookiecutters_cpp_test/math/helpers_python_extension.cpp'  # Needs to be cpp (h/hpp files are silently ignored)
+]
 py_release = py_installation.extension_module(
         'helpers_python_extension',  # Must match name module name in 'cookiecutters_cpp_test/math/helpers_python_extension.h'
-        [
-                'cookiecutters_cpp_test/math/helpers_python_extension.cpp'  # Needs to be cpp (h/hpp files are silently ignored)
-        ],
+        py_sources,
         source_checker,
         install: true,
         subdir: 'cookiecutters_cpp_test/math',  # Must package path in 'cookiecutters_cpp_test/math/helpers_python_extension.h'
-        dependencies: dependencies,
-        include_directories: py_includes,
+        dependencies: dependencies + py_dependencies,
+        include_directories: include_dirs + py_include_dirs,
         override_options: base_release_override_options,
         cpp_args: base_release_cpp_args,
         link_args: base_release_link_args
 )
-
+# For auto-complete to work in IDEs like CLion, the target being built needs to reference the appropriate header files / libraries. Use
+# this target when working on the python extension so you get full IDE support.
+#
+# WARNING: To prevent linker errors when building this, an "embedded" version of the python dependency is being used. Note that
+#          py_dependencies already has the normal non-embedded python dependency in it, and so adding the embedded version means that the
+#          python dependency is now being fed twice (once in non-embedded form and once in embedded form). This doesn't seem to be causing
+#          any issues so far, but if it does remove the non-embedded version before continuing.
+#
+# WARNING: Note that what's being built is a *static* library. It seems that on some platforms, *shared* libraries (not static, but shared)
+#          require that whatever they're linking against have PIC turned on? When boost is built as a static library, it doesn't have PIC
+#          turned on, and so using static boost from a shared library seems tocause the linker to blow up. It seems b2 does provide a
+#          "-pic" option but it's disabled by default when building as a static library.
+#
+#          Since this target isn't being used for anything other than making it easier to work in an IDE, keep it as a static library.
+py_dependencies_embedded = py_dependencies + [py_installation.dependency(embed: true)]
+helpers_python_extension_mock = static_library(
+        'helpers_python_extension_mock',
+        py_sources,
+        source_checker,
+        dependencies: dependencies + py_dependencies_embedded,
+        include_directories: include_dirs + py_include_dirs,
+        override_options: override_options,
+        cpp_args: cpp_args,
+        link_args: link_args
+)

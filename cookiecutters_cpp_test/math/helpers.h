@@ -4,7 +4,6 @@
 #include <vector>
 #include <numeric>
 #include <concepts>
-#include <type_traits>
 
 namespace cookiecutters_cpp_test::math::helpers {
     /**
@@ -39,4 +38,4 @@ namespace cookiecutters_cpp_test::math::helpers {
     };
 }
 
-#endif // COOKIECUTTERS_CPP_TEST_MATH_HELPERS_H
+#endif //COOKIECUTTERS_CPP_TEST_MATH_HELPERS_H

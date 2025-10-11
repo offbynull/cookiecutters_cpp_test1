@@ -8,20 +8,15 @@ To configure buildtype:
 * `meson configure buildDir -Dbuildtype=minsize`
 * `meson configure buildDir -Dbuildtype=plain`
 
-
 To compile and run command-line interface:
 
 * `meson compile -C buildDir cli`
 * `./buildDir/cli`
 
-
-
 To compile and run GUnit unittests:
 
 * `meson compile -C buildDir gtest`
 * `./buildDir/gtest`
-
-
 
 To compile and run Python extension:
 
